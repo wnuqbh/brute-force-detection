@@ -1,0 +1,61 @@
+# Data Configuration
+data:
+  path: "data/cybersecurity_intrusion_data.csv"
+  target_column: "attack_detected"
+  drop_columns:
+    - "attack_detected"
+    - "session_id"
+  test_size: 0.2
+  random_state: 42
+  stratify: true
+
+# Preprocessing Configuration
+preprocessing:
+  handle_missing:
+    encryption_used: "Unknown"
+  categorical_encoding: "onehot"  # onehot or label
+
+# Feature Engineering Configuration
+features:
+  core_features:
+    - "failed_logins"
+    - "ip_reputation_score"
+    - "login_attempts"
+    - "session_duration"
+    - "network_packet_size"
+  
+  extended_features:
+    - "failed_logins"
+    - "ip_reputation_score"
+    - "login_attempts"
+    - "session_duration"
+    - "network_packet_size"
+    - "unusual_time_access"
+
+# Model Configuration
+model:
+  type: "RandomForest"
+  params:
+    n_estimators: 100
+    max_depth: 15
+    min_samples_split: 5
+    min_samples_leaf: 2
+    random_state: 42
+    n_jobs: -1
+    class_weight: "balanced"
+
+# Evaluation Configuration
+evaluation:
+  metrics:
+    - "accuracy"
+    - "precision"
+    - "recall"
+    - "f1"
+  confusion_matrix: true
+  roc_auc: true
+
+# Output Configuration
+output:
+  models_dir: "models"
+  reports_dir: "reports"
+  model_name: "brute_force_detector.pkl"
