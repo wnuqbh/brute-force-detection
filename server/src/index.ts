@@ -2,6 +2,9 @@ import * as express from "express";
 import { Request, Response } from "express";
 import * as cors from "cors";
 import axios from "axios";
+import * as fs from "fs";
+import * as path from "path";
+import csvParser = require("csv-parser");
 
 const app = express();
 const PORT = 5000;
@@ -14,50 +17,73 @@ app.get("/", (req: Request, res: Response) => {
 });
 
 app.get("/api/sessions", (req: Request, res: Response) => {
-  const sessions = [
-    {
-      session_id: "S001",
-      failed_logins: 18,
-      ip_reputation_score: 0.95,
-      login_attempts: 20,
-      session_duration: 300,
-      network_packet_size: 1200,
-    },
-    {
-      session_id: "S002",
-      failed_logins: 2,
-      ip_reputation_score: 0.1,
-      login_attempts: 3,
-      session_duration: 120,
-      network_packet_size: 450,
-    },
-    {
-      session_id: "S003",
-      failed_logins: 10,
-      ip_reputation_score: 0.72,
-      login_attempts: 12,
-      session_duration: 240,
-      network_packet_size: 900,
-    },
-    {
-      session_id: "S004",
-      failed_logins: 1,
-      ip_reputation_score: 0.05,
-      login_attempts: 2,
-      session_duration: 80,
-      network_packet_size: 300,
-    },
-    {
-      session_id: "S005",
-      failed_logins: 15,
-      ip_reputation_score: 0.88,
-      login_attempts: 17,
-      session_duration: 280,
-      network_packet_size: 1100,
-    },
-  ];
+  const sessions: Array<{
+    session_id: string;
+    failed_logins: number;
+    ip_reputation_score: number;
+    login_attempts: number;
+    session_duration: number;
+    network_packet_size: number;
+  }> = [];
 
-  res.json(sessions);
+  const limit =
+    typeof req.query.limit === "string" ? Number(req.query.limit) : 20;
+  const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(limit, 500)) : 20;
+
+  // When running `npm run dev` from `server/`, cwd is `.../brute-force-detection/server`.
+  const csvPath = path.resolve(
+    process.cwd(),
+    "../data/cybersecurity_intrusion_data.csv"
+  );
+
+  if (!fs.existsSync(csvPath)) {
+    return res.status(500).json({
+      error: "CSV dataset not found",
+      csvPath,
+    });
+  }
+
+  fs.createReadStream(csvPath)
+    .pipe(csvParser())
+    .on("data", (row: any) => {
+      if (sessions.length >= safeLimit) return;
+
+      sessions.push({
+        session_id: String(row.session_id ?? ""),
+        failed_logins: Number(row.failed_logins),
+        ip_reputation_score: Number(row.ip_reputation_score),
+        login_attempts: Number(row.login_attempts),
+        session_duration: Number(row.session_duration),
+        network_packet_size: Number(row.network_packet_size),
+      });
+    })
+    .on("end", () => {
+      res.json(sessions);
+    })
+    .on("error", (error: unknown) => {
+      console.error("Error reading CSV:", error);
+      res.status(500).json({ error: "Failed to read CSV data" });
+    });
+});
+
+app.post("/api/login", (req: Request, res: Response) => {
+  const { username, password } = req.body ?? {};
+
+  if (!username || !password) {
+    return res.status(400).json({
+      error: "Username and password are required",
+    });
+  }
+
+  // Demo credentials (override via env vars if desired)
+  const expectedUsername = process.env.LOGIN_USERNAME ?? "admin";
+  const expectedPassword = process.env.LOGIN_PASSWORD ?? "admin123";
+
+  if (username === expectedUsername && password === expectedPassword) {
+    return res.status(200).json({ message: "Login successful" });
+  }
+
+  return res.status(401).json({ error: "Invalid username or password" });
 });
 
 app.post("/api/predict", async (req: Request, res: Response) => {
@@ -81,8 +107,20 @@ app.post("/api/predict", async (req: Request, res: Response) => {
       console.error("ML API error response:", error.response.data);
     }
 
+    const status = typeof error?.response?.status === "number" ? error.response.status : 500;
+    const details =
+      typeof error?.code === "string"
+        ? `${error.code}`
+        : typeof error?.message === "string"
+          ? error.message
+          : "Unknown error";
+
     res.status(500).json({
       error: "Failed to get prediction from ML API",
+      hint:
+        "Make sure the ML API is running on http://127.0.0.1:8000 (uvicorn src.api:app --reload --port 8000).",
+      upstream_status: status,
+      details,
     });
   }
 });

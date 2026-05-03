@@ -50,7 +50,7 @@
   }
 }
 
-#root {
+/*#root {
   width: 1126px;
   max-width: 100%;
   margin: 0 auto;
@@ -61,6 +61,7 @@
   flex-direction: column;
   box-sizing: border-box;
 }
+*/
 
 body {
   margin: 0;
@@ -108,4 +109,29 @@ code {
   line-height: 135%;
   padding: 4px 8px;
   background: var(--code-bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: #07111f;
+  overflow-x: hidden;
+}
+
+#root {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  text-align: initial;
 }

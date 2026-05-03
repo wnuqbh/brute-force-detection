@@ -3,3 +3,9 @@ __pycache__/
 *.pyc 
 .vscode/ 
 data/ 
+
+node_modules/
+**/node_modules/
+dist/
+dashboard/dist/
+.env
