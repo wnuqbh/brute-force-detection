@@ -44,11 +44,14 @@ type SessionRow = SessionInput & {
 };
 
 export default function DashboardPage({ onLogout }: DashboardPageProps) {
-  const [sessions, setSessions] = useState<SessionRow[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("All");
-  const [error, setError] = useState("");
+    const [sessions, setSessions] = useState<SessionRow[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [searchTerm, setSearchTerm] = useState("");
+    const [statusFilter, setStatusFilter] = useState("All");
+    const [error, setError] = useState("");
+    const [currentPage, setCurrentPage] = useState(1);
+
+    const rowsPerPage = 7;
 
   async function loadSessions() {
     try {
@@ -126,6 +129,13 @@ export default function DashboardPage({ onLogout }: DashboardPageProps) {
     });
   }, [sessions, searchTerm, statusFilter]);
 
+  const totalPages = Math.max(1, Math.ceil(filteredSessions.length / rowsPerPage));
+
+const paginatedSessions = filteredSessions.slice(
+  (currentPage - 1) * rowsPerPage,
+  currentPage * rowsPerPage
+);
+
   const totalLoginAttempts = useMemo(() => {
     return sessions.reduce((total, session) => total + session.login_attempts, 0);
   }, [sessions]);
@@ -145,11 +155,21 @@ export default function DashboardPage({ onLogout }: DashboardPageProps) {
     return Number(attackValue) === 1 ? "Compromised" : "Benign";
   }
 
-  function getReputationClass(score: number) {
-    if (score < 40) return "danger";
-    if (score < 75) return "warning";
+    function normalizeReputationScore(score: number) {
+    if (score <= 1) {
+        return Math.round(score * 100);
+    }
+
+    return Math.round(score);
+    }
+
+    function getReputationClass(score: number) {
+    const normalizedScore = normalizeReputationScore(score);
+
+    if (normalizedScore < 40) return "danger";
+    if (normalizedScore < 75) return "warning";
     return "safe";
-  }
+    }
 
   function exportCsv() {
     const headers = [
@@ -289,15 +309,21 @@ export default function DashboardPage({ onLogout }: DashboardPageProps) {
               type="text"
               placeholder="Search Session ID..."
               value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-            />
+              onChange={(event) => {
+                setSearchTerm(event.target.value);
+                setCurrentPage(1);
+                }}
+                            />
           </div>
 
           <div className="filter-label">Filters:</div>
 
           <select
             value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value)}
+            onChange={(event) => {
+            setStatusFilter(event.target.value);
+            setCurrentPage(1);
+            }}
           >
             <option value="All">Status: All</option>
             <option value="compromised">Compromised</option>
@@ -315,6 +341,7 @@ export default function DashboardPage({ onLogout }: DashboardPageProps) {
             onClick={() => {
               setSearchTerm("");
               setStatusFilter("All");
+              setCurrentPage(1);
             }}
           >
             Clear All
@@ -336,7 +363,7 @@ export default function DashboardPage({ onLogout }: DashboardPageProps) {
             </thead>
 
             <tbody>
-              {filteredSessions.slice(0, 7).map((session) => {
+              {filteredSessions.map((session) => {
                 const result = getResultLabel(session);
                 const reputationClass = getReputationClass(
                   session.ip_reputation_score
@@ -349,7 +376,7 @@ export default function DashboardPage({ onLogout }: DashboardPageProps) {
                     <td>{session.failed_logins}</td>
                     <td>
                       <span className={`reputation ${reputationClass}`}>
-                        {session.ip_reputation_score} / 100
+                        {normalizeReputationScore(session.ip_reputation_score)} / 100
                       </span>
                     </td>
                     <td>
@@ -376,22 +403,73 @@ export default function DashboardPage({ onLogout }: DashboardPageProps) {
           )}
 
           <div className="table-footer">
-            <p>
-              Showing <strong>1-7</strong> of{" "}
-              <strong>{filteredSessions.length.toLocaleString()}</strong>{" "}
-              results
-            </p>
+  <p>
+    Showing{" "}
+    <strong>
+      {filteredSessions.length === 0
+        ? "0"
+        : `${(currentPage - 1) * rowsPerPage + 1}-${Math.min(
+            currentPage * rowsPerPage,
+            filteredSessions.length
+          )}`}
+    </strong>{" "}
+    of <strong>{filteredSessions.length.toLocaleString()}</strong> results
+  </p>
 
-            <div className="pagination">
-              <button>‹</button>
-              <button className="active-page">1</button>
-              <button>2</button>
-              <button>3</button>
-              <span>...</span>
-              <button>12</button>
-              <button>›</button>
-            </div>
-          </div>
+  <div className="pagination">
+    <button
+      disabled={currentPage === 1}
+      onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+    >
+      ‹
+    </button>
+
+    <button
+      className={currentPage === 1 ? "active-page" : ""}
+      onClick={() => setCurrentPage(1)}
+    >
+      1
+    </button>
+
+    {totalPages >= 2 && (
+      <button
+        className={currentPage === 2 ? "active-page" : ""}
+        onClick={() => setCurrentPage(2)}
+      >
+        2
+      </button>
+    )}
+
+    {totalPages >= 3 && (
+      <button
+        className={currentPage === 3 ? "active-page" : ""}
+        onClick={() => setCurrentPage(3)}
+      >
+        3
+      </button>
+    )}
+
+    {totalPages > 4 && <span>...</span>}
+
+    {totalPages > 3 && (
+      <button
+        className={currentPage === totalPages ? "active-page" : ""}
+        onClick={() => setCurrentPage(totalPages)}
+      >
+        {totalPages}
+      </button>
+    )}
+
+    <button
+      disabled={currentPage === totalPages}
+      onClick={() =>
+        setCurrentPage((page) => Math.min(totalPages, page + 1))
+      }
+    >
+      ›
+    </button>
+  </div>
+</div>
         </section>
       </section>
     </main>
