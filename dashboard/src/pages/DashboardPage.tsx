@@ -266,8 +266,10 @@ const paginatedSessions = filteredSessions.slice(
             <div>
               <p>Total Login Attempts</p>
               <h2>{totalLoginAttempts.toLocaleString()}</h2>
-              <span className="trend trend-green">↗ 12%</span>
-              <small>Increase vs last 24h</small>
+              <div className="kpi-meta">
+                <span className="trend trend-green">↗ 12%</span>
+                <small>Increase vs last 24h</small>
+            </div>
             </div>
 
             <div className="kpi-icon blue-icon">
@@ -279,8 +281,10 @@ const paginatedSessions = filteredSessions.slice(
             <div>
               <p>Failed Logins</p>
               <h2>{totalFailedLogins.toLocaleString()}</h2>
-              <span className="trend trend-yellow">High Vol</span>
-              <small>Unusual spike detected</small>
+              <div className="kpi-meta">
+                <span className="trend trend-yellow">High Vol</span>
+                <small>Unusual spike detected</small>
+            </div>
             </div>
 
             <div className="kpi-icon yellow-icon">
@@ -292,8 +296,10 @@ const paginatedSessions = filteredSessions.slice(
             <div>
               <p>Brute-Force Incidents</p>
               <h2>{totalIncidents.toLocaleString()}</h2>
-              <span className="trend trend-red">Critical</span>
-              <small>Requires immediate attention</small>
+              <div className="kpi-meta">
+                <span className="trend trend-red">Critical</span>
+                <small>Requires immediate attention</small>
+            </div>
             </div>
 
             <div className="kpi-icon red-icon">
