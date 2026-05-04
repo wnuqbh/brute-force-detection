@@ -1,331 +1,399 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Legend,
-} from "recharts";
+  Bell,
+  Download,
+  Lock,
+  RefreshCw,
+  Search,
+  Shield,
+  ShieldAlert,
+  User,
+  Activity,
+  LogOut,
+} from "lucide-react";
+import "./DashboardPage.css";
+
+type DashboardPageProps = {
+  onLogout: () => void;
+};
 
 type SessionInput = {
   session_id: string;
-  failed_logins: number;
-  ip_reputation_score: number;
+  network_packet_size: number;
+  protocol_type: string;
   login_attempts: number;
   session_duration: number;
-  network_packet_size: number;
+  encryption_used: string;
+  ip_reputation_score: number;
+  failed_logins: number;
+  browser_type: string;
+  unusual_time_access: number;
+  attack_detected?: number;
 };
 
 type PredictionResult = {
   prediction: number;
-  probability: number;
-  risk_level: string;
+  probability?: number;
+  risk_level?: string;
 };
 
-type PredictedSession = SessionInput & PredictionResult;
+type SessionRow = SessionInput & {
+  prediction?: number;
+  probability?: number;
+  risk_level?: string;
+};
 
-function DashboardPage() {
-  const [sessions, setSessions] = useState<PredictedSession[]>([]);
+export default function DashboardPage({ onLogout }: DashboardPageProps) {
+  const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("All");
+  const [error, setError] = useState("");
 
-  const fetchSessions = async (): Promise<SessionInput[]> => {
-    const res = await fetch("http://localhost:5000/api/sessions");
-
-    if (!res.ok) {
-      throw new Error("Failed to fetch sessions");
-    }
-
-    return res.json();
-  };
-
-  const runBatchPrediction = async () => {
+  async function loadSessions() {
     try {
       setLoading(true);
-      setError(null);
+      setError("");
 
-      const rawSessions = await fetchSessions();
+      const sessionsResponse = await fetch("http://localhost:5000/api/sessions");
 
-      const results = await Promise.all(
-        rawSessions.map(async (session) => {
-          const response = await fetch("http://localhost:5000/api/predict", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              failed_logins: session.failed_logins,
-              ip_reputation_score: session.ip_reputation_score,
-              login_attempts: session.login_attempts,
-              session_duration: session.session_duration,
-              network_packet_size: session.network_packet_size,
-            }),
-          });
+      if (!sessionsResponse.ok) {
+        throw new Error("Failed to fetch sessions from backend.");
+      }
 
-          if (!response.ok) {
-            throw new Error(`Failed prediction for ${session.session_id}`);
+      const sessionData: SessionInput[] = await sessionsResponse.json();
+
+      const predictedSessions = await Promise.all(
+        sessionData.map(async (session) => {
+          try {
+            const predictionResponse = await fetch(
+              "http://localhost:5000/api/predict",
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify(session),
+              }
+            );
+
+            if (!predictionResponse.ok) {
+              return session;
+            }
+
+            const predictionData: PredictionResult =
+              await predictionResponse.json();
+
+            return {
+              ...session,
+              prediction: predictionData.prediction,
+              probability: predictionData.probability,
+              risk_level: predictionData.risk_level,
+            };
+          } catch {
+            return session;
           }
-
-          const predictionData: PredictionResult = await response.json();
-
-          return {
-            ...session,
-            ...predictionData,
-          };
         })
       );
 
-      setSessions(results);
-    } catch (err: any) {
-      console.error(err);
-      setError(err.message || "Something went wrong");
+      setSessions(predictedSessions);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong while loading dashboard data."
+      );
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const totalSessions = sessions.length;
-  const totalAttacks = sessions.filter((s) => s.prediction === 1).length;
-  const normalSessions = sessions.filter((s) => s.prediction === 0).length;
+  useEffect(() => {
+    loadSessions();
+  }, []);
 
-  const detectionRate =
-    totalSessions > 0
-      ? ((totalAttacks / totalSessions) * 100).toFixed(1)
-      : "0.0";
+  const filteredSessions = useMemo(() => {
+    return sessions.filter((session) => {
+      const result = getResultLabel(session);
+      const matchesSearch = session.session_id
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase());
 
-  const attackData = [
-    { name: "Attack", value: totalAttacks },
-    { name: "Normal", value: normalSessions },
-  ];
+      const matchesStatus =
+        statusFilter === "All" || result.toLowerCase() === statusFilter;
 
-  const riskCounts = {
-    High: sessions.filter((s) => s.risk_level === "High").length,
-    Medium: sessions.filter((s) => s.risk_level === "Medium").length,
-    Low: sessions.filter((s) => s.risk_level === "Low").length,
-  };
+      return matchesSearch && matchesStatus;
+    });
+  }, [sessions, searchTerm, statusFilter]);
 
-  const riskData = [
-    { name: "High", value: riskCounts.High },
-    { name: "Medium", value: riskCounts.Medium },
-    { name: "Low", value: riskCounts.Low },
-  ];
+  const totalLoginAttempts = useMemo(() => {
+    return sessions.reduce((total, session) => total + session.login_attempts, 0);
+  }, [sessions]);
 
-  const cardStyle: React.CSSProperties = {
-    background: "#ffffff",
-    borderRadius: "12px",
-    padding: "20px",
-    boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-    flex: 1,
-    minWidth: "220px",
-  };
+  const totalFailedLogins = useMemo(() => {
+    return sessions.reduce((total, session) => total + session.failed_logins, 0);
+  }, [sessions]);
 
-  const chartCardStyle: React.CSSProperties = {
-    background: "#ffffff",
-    borderRadius: "12px",
-    padding: "20px",
-    boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-    flex: 1,
-    minWidth: "320px",
-  };
+  const totalIncidents = useMemo(() => {
+    return sessions.filter((session) => getResultLabel(session) === "Compromised")
+      .length;
+  }, [sessions]);
 
-  const thStyle: React.CSSProperties = {
-    textAlign: "left",
-    padding: "12px",
-    background: "#f1f3f5",
-    borderBottom: "1px solid #ddd",
-  };
+  function getResultLabel(session: SessionRow) {
+    const attackValue = session.prediction ?? session.attack_detected ?? 0;
 
-  const tdStyle: React.CSSProperties = {
-    padding: "12px",
-    borderBottom: "1px solid #eee",
-  };
+    return Number(attackValue) === 1 ? "Compromised" : "Benign";
+  }
+
+  function getReputationClass(score: number) {
+    if (score < 40) return "danger";
+    if (score < 75) return "warning";
+    return "safe";
+  }
+
+  function exportCsv() {
+    const headers = [
+      "session_id",
+      "login_attempts",
+      "failed_logins",
+      "ip_reputation_score",
+      "result",
+    ];
+
+    const rows = filteredSessions.map((session) => [
+      session.session_id,
+      session.login_attempts,
+      session.failed_logins,
+      session.ip_reputation_score,
+      getResultLabel(session),
+    ]);
+
+    const csvContent = [headers, ...rows]
+      .map((row) => row.join(","))
+      .join("\n");
+
+    const blob = new Blob([csvContent], {
+      type: "text/csv;charset=utf-8;",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = "detection-results.csv";
+    link.click();
+
+    URL.revokeObjectURL(url);
+  }
 
   return (
-    <div
-      style={{
-        padding: "24px",
-        fontFamily: "Arial, sans-serif",
-        background: "#f5f7fb",
-        minHeight: "100vh",
-      }}
-    >
-      <h1 style={{ marginBottom: "16px" }}>Brute Force Detection Dashboard</h1>
+    <main className="dashboard-page">
+      <nav className="dashboard-navbar">
+        <div className="dashboard-brand">
+          <div className="dashboard-brand-icon">
+            <Shield size={24} />
+          </div>
+          <span>
+            BruteForce <strong>Sentinel</strong>
+            </span>
+        </div>
 
-      <button
-        onClick={runBatchPrediction}
-        style={{
-          padding: "12px 18px",
-          border: "none",
-          borderRadius: "8px",
-          background: "#1976d2",
-          color: "#fff",
-          cursor: "pointer",
-          marginBottom: "24px",
-        }}
-      >
-        Run Multiple ML Predictions
-      </button>
+        <div className="dashboard-nav-links">
+          <button className="active">Dashboard</button>
+          <button>Detection Logs</button>
+          <button>Rules</button>
+          <button>Settings</button>
+        </div>
 
-      {loading && <p>Loading predictions...</p>}
-      {error && <p style={{ color: "red" }}>Error: {error}</p>}
+        <div className="dashboard-user-area">
+          <Bell size={22} />
+          <div className="dashboard-avatar">
+            <User size={22} />
+          </div>
+        </div>
+      </nav>
 
-      {sessions.length > 0 && (
-        <>
-          <div
-            style={{
-              display: "flex",
-              gap: "16px",
-              flexWrap: "wrap",
-              marginBottom: "32px",
-            }}
-          >
-            <div style={cardStyle}>
-              <h3>Total Sessions</h3>
-              <p style={{ fontSize: "28px", fontWeight: "bold" }}>
-                {totalSessions}
-              </p>
-            </div>
-
-            <div style={cardStyle}>
-              <h3>Total Attacks</h3>
-              <p
-                style={{
-                  fontSize: "28px",
-                  fontWeight: "bold",
-                  color: "#d32f2f",
-                }}
-              >
-                {totalAttacks}
-              </p>
-            </div>
-
-            <div style={cardStyle}>
-              <h3>Normal Sessions</h3>
-              <p
-                style={{
-                  fontSize: "28px",
-                  fontWeight: "bold",
-                  color: "#2e7d32",
-                }}
-              >
-                {normalSessions}
-              </p>
-            </div>
-
-            <div style={cardStyle}>
-              <h3>Detection Rate</h3>
-              <p style={{ fontSize: "28px", fontWeight: "bold" }}>
-                {detectionRate}%
-              </p>
-            </div>
+      <section className="dashboard-content">
+        <div className="dashboard-header">
+          <div>
+            <h1>Detection Results</h1>
+            <p>
+              Real-time analysis of authentication attempts. Monitoring
+              brute-force patterns across all registered endpoints.
+            </p>
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              gap: "24px",
-              flexWrap: "wrap",
-              marginBottom: "32px",
-            }}
-          >
-            <div style={chartCardStyle}>
-              <h3>Attack vs Normal</h3>
-              <PieChart width={320} height={260}>
-                <Pie
-                  data={attackData}
-                  dataKey="value"
-                  nameKey="name"
-                  outerRadius={85}
-                  label
-                >
-                  <Cell fill="#d32f2f" />
-                  <Cell fill="#2e7d32" />
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
+          <div className="dashboard-actions">
+            <button className="secondary-action" onClick={loadSessions}>
+              <RefreshCw size={18} />
+              {loading ? "Refreshing..." : "Refresh"}
+            </button>
+
+            <button className="primary-action" onClick={exportCsv}>
+              <Download size={18} />
+              Export CSV
+            </button>
+
+            <button className="logout-action" onClick={onLogout}>
+              <LogOut size={18} />
+              Logout
+            </button>
+          </div>
+        </div>
+
+        <div className="dashboard-kpi-grid">
+          <article className="kpi-card kpi-blue">
+            <div>
+              <p>Total Login Attempts</p>
+              <h2>{totalLoginAttempts.toLocaleString()}</h2>
+              <span className="trend trend-green">↗ 12%</span>
+              <small>Increase vs last 24h</small>
             </div>
 
-            <div style={chartCardStyle}>
-              <h3>Risk Level Distribution</h3>
-              <BarChart width={380} height={260} data={riskData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis allowDecimals={false} />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="value" fill="#1976d2" />
-              </BarChart>
+            <div className="kpi-icon blue-icon">
+              <Activity size={28} />
             </div>
+          </article>
+
+          <article className="kpi-card kpi-yellow">
+            <div>
+              <p>Failed Logins</p>
+              <h2>{totalFailedLogins.toLocaleString()}</h2>
+              <span className="trend trend-yellow">High Vol</span>
+              <small>Unusual spike detected</small>
+            </div>
+
+            <div className="kpi-icon yellow-icon">
+              <Lock size={28} />
+            </div>
+          </article>
+
+          <article className="kpi-card kpi-red">
+            <div>
+              <p>Brute-Force Incidents</p>
+              <h2>{totalIncidents.toLocaleString()}</h2>
+              <span className="trend trend-red">Critical</span>
+              <small>Requires immediate attention</small>
+            </div>
+
+            <div className="kpi-icon red-icon">
+              <ShieldAlert size={28} />
+            </div>
+          </article>
+        </div>
+
+        <div className="dashboard-filter-bar">
+          <div className="filter-input">
+            <Search size={19} />
+            <input
+              type="text"
+              placeholder="Search Session ID..."
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+            />
           </div>
 
-          <div
-            style={{
-              background: "#ffffff",
-              borderRadius: "12px",
-              padding: "20px",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-              overflowX: "auto",
+          <div className="filter-label">Filters:</div>
+
+          <select
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+          >
+            <option value="All">Status: All</option>
+            <option value="compromised">Compromised</option>
+            <option value="benign">Benign</option>
+          </select>
+
+          <select>
+            <option>Time: Last 24 Hours</option>
+            <option>Time: Last 7 Days</option>
+            <option>Time: Last 30 Days</option>
+          </select>
+
+          <button
+            className="clear-filter"
+            onClick={() => {
+              setSearchTerm("");
+              setStatusFilter("All");
             }}
           >
-            <h2 style={{ marginBottom: "16px" }}>Predicted Sessions</h2>
+            Clear All
+          </button>
+        </div>
 
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>Session ID</th>
-                  <th style={thStyle}>Failed Logins</th>
-                  <th style={thStyle}>IP Reputation</th>
-                  <th style={thStyle}>Login Attempts</th>
-                  <th style={thStyle}>Session Duration</th>
-                  <th style={thStyle}>Packet Size</th>
-                  <th style={thStyle}>Prediction</th>
-                  <th style={thStyle}>Probability</th>
-                  <th style={thStyle}>Risk Level</th>
-                </tr>
-              </thead>
+        {error && <div className="dashboard-error">{error}</div>}
 
-              <tbody>
-                {sessions.map((s) => (
-                  <tr key={s.session_id}>
-                    <td style={tdStyle}>{s.session_id}</td>
-                    <td style={tdStyle}>{s.failed_logins}</td>
-                    <td style={tdStyle}>{s.ip_reputation_score}</td>
-                    <td style={tdStyle}>{s.login_attempts}</td>
-                    <td style={tdStyle}>{s.session_duration}</td>
-                    <td style={tdStyle}>{s.network_packet_size}</td>
-                    <td style={tdStyle}>
-                      {s.prediction === 1 ? "Attack" : "Normal"}
+        <section className="dashboard-table-card">
+          <table>
+            <thead>
+              <tr>
+                <th>Session ID</th>
+                <th>Login Attempts</th>
+                <th>Failed Logins</th>
+                <th>IP Reputation Score</th>
+                <th>Result</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {filteredSessions.slice(0, 7).map((session) => {
+                const result = getResultLabel(session);
+                const reputationClass = getReputationClass(
+                  session.ip_reputation_score
+                );
+
+                return (
+                  <tr key={session.session_id}>
+                    <td>{session.session_id}</td>
+                    <td>{session.login_attempts}</td>
+                    <td>{session.failed_logins}</td>
+                    <td>
+                      <span className={`reputation ${reputationClass}`}>
+                        {session.ip_reputation_score} / 100
+                      </span>
                     </td>
-                    <td style={tdStyle}>{s.probability}</td>
-                    <td
-                      style={{
-                        ...tdStyle,
-                        fontWeight: "bold",
-                        color:
-                          s.risk_level === "High"
-                            ? "#d32f2f"
-                            : s.risk_level === "Medium"
-                            ? "#f57c00"
-                            : "#2e7d32",
-                      }}
-                    >
-                      {s.risk_level}
+                    <td>
+                      <span
+                        className={
+                          result === "Compromised"
+                            ? "status-badge compromised"
+                            : "status-badge benign"
+                        }
+                      >
+                        {result}
+                      </span>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                );
+              })}
+            </tbody>
+          </table>
+
+          {filteredSessions.length === 0 && !loading && (
+            <div className="empty-state">
+              No sessions found. Make sure your backend is running.
+            </div>
+          )}
+
+          <div className="table-footer">
+            <p>
+              Showing <strong>1-7</strong> of{" "}
+              <strong>{filteredSessions.length.toLocaleString()}</strong>{" "}
+              results
+            </p>
+
+            <div className="pagination">
+              <button>‹</button>
+              <button className="active-page">1</button>
+              <button>2</button>
+              <button>3</button>
+              <span>...</span>
+              <button>12</button>
+              <button>›</button>
+            </div>
           </div>
-        </>
-      )}
-    </div>
+        </section>
+      </section>
+    </main>
   );
 }
-
-export default DashboardPage;

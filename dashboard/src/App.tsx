@@ -9,7 +9,7 @@ function App() {
     return <LoginPage onLogin={() => setIsLoggedIn(true)} />;
   }
 
-  return <DashboardPage />;
+  return <DashboardPage onLogout={() => setIsLoggedIn(false)} />;
 }
 
 export default App;
