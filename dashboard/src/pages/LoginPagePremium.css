@@ -592,3 +592,15 @@
     height: 58px;
   }
 }
+
+.premium-login-error {
+  margin: 10px 0 0;
+  color: #dc2626;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.premium-signin-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}

@@ -1,195 +1,157 @@
 import { useEffect, useMemo, useState } from "react";
+import type { DetectionRow } from "../App";
 import {
-  Bell,
+  Activity,
   Download,
   Lock,
-  RefreshCw,
+  LogOut,
   Search,
   Shield,
   ShieldAlert,
-  User,
-  Activity,
-  LogOut,
+  Trash2,
 } from "lucide-react";
 import "./DashboardPage.css";
 
 type DashboardPageProps = {
+  rows: DetectionRow[];
+  onClearDashboard: () => void;
   onLogout: () => void;
+  onOpenSimulation: () => void;
 };
 
-type SessionInput = {
-  session_id: string;
-  network_packet_size: number;
-  protocol_type: string;
-  login_attempts: number;
-  session_duration: number;
-  encryption_used: string;
-  ip_reputation_score: number;
-  failed_logins: number;
-  browser_type: string;
-  unusual_time_access: number;
-  attack_detected?: number;
-};
+function DashboardPage({
+  rows,
+  onClearDashboard,
+  onLogout,
+  onOpenSimulation,
+}: DashboardPageProps) {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("All");
+  const [currentPage, setCurrentPage] = useState(1);
 
-type PredictionResult = {
-  prediction: number;
-  probability?: number;
-  risk_level?: string;
-};
+  const rowsPerPage = 7;
 
-type SessionRow = SessionInput & {
-  prediction?: number;
-  probability?: number;
-  risk_level?: string;
-};
-
-export default function DashboardPage({ onLogout }: DashboardPageProps) {
-    const [sessions, setSessions] = useState<SessionRow[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [searchTerm, setSearchTerm] = useState("");
-    const [statusFilter, setStatusFilter] = useState("All");
-    const [error, setError] = useState("");
-    const [currentPage, setCurrentPage] = useState(1);
-
-    const rowsPerPage = 7;
-
-  async function loadSessions() {
-    try {
-      setLoading(true);
-      setError("");
-
-      const sessionsResponse = await fetch("http://localhost:5000/api/sessions");
-
-      if (!sessionsResponse.ok) {
-        throw new Error("Failed to fetch sessions from backend.");
-      }
-
-      const sessionData: SessionInput[] = await sessionsResponse.json();
-
-      const predictedSessions = await Promise.all(
-        sessionData.map(async (session) => {
-          try {
-            const predictionResponse = await fetch(
-              "http://localhost:5000/api/predict",
-              {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify(session),
-              }
-            );
-
-            if (!predictionResponse.ok) {
-              return session;
-            }
-
-            const predictionData: PredictionResult =
-              await predictionResponse.json();
-
-            return {
-              ...session,
-              prediction: predictionData.prediction,
-              probability: predictionData.probability,
-              risk_level: predictionData.risk_level,
-            };
-          } catch {
-            return session;
-          }
-        })
-      );
-
-      setSessions(predictedSessions);
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Something went wrong while loading dashboard data."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    loadSessions();
-  }, []);
+  // Dashboard data now comes only from App.tsx.
+  // It will be empty after login until the user runs simulation or uploads CSV.
+  const sessions = rows;
 
   const filteredSessions = useMemo(() => {
     return sessions.filter((session) => {
-      const result = getResultLabel(session);
       const matchesSearch = session.session_id
         .toLowerCase()
         .includes(searchTerm.toLowerCase());
 
       const matchesStatus =
-        statusFilter === "All" || result.toLowerCase() === statusFilter;
+        statusFilter === "All" ||
+        session.result.toLowerCase() === statusFilter.toLowerCase();
 
       return matchesSearch && matchesStatus;
     });
   }, [sessions, searchTerm, statusFilter]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredSessions.length / rowsPerPage));
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredSessions.length / rowsPerPage)
+  );
 
-const paginatedSessions = filteredSessions.slice(
-  (currentPage - 1) * rowsPerPage,
-  currentPage * rowsPerPage
-);
+  const paginatedSessions = filteredSessions.slice(
+    (currentPage - 1) * rowsPerPage,
+    currentPage * rowsPerPage
+  );
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const totalLoginAttempts = useMemo(() => {
-    return sessions.reduce((total, session) => total + session.login_attempts, 0);
+    return sessions.reduce(
+      (total, session) => total + session.login_attempts,
+      0
+    );
   }, [sessions]);
 
   const totalFailedLogins = useMemo(() => {
-    return sessions.reduce((total, session) => total + session.failed_logins, 0);
+    return sessions.reduce(
+      (total, session) => total + session.failed_logins,
+      0
+    );
   }, [sessions]);
 
   const totalIncidents = useMemo(() => {
-    return sessions.filter((session) => getResultLabel(session) === "Compromised")
+    return sessions.filter((session) => session.result === "Compromised")
       .length;
   }, [sessions]);
 
-  function getResultLabel(session: SessionRow) {
-    const attackValue = session.prediction ?? session.attack_detected ?? 0;
-
-    return Number(attackValue) === 1 ? "Compromised" : "Benign";
-  }
-
-    function normalizeReputationScore(score: number) {
+  function normalizeReputationScore(score: number) {
     if (score <= 1) {
-        return Math.round(score * 100);
+      return Math.round(score * 100);
     }
 
     return Math.round(score);
-    }
+  }
 
-    function getReputationClass(score: number) {
+  function getReputationClass(score: number) {
     const normalizedScore = normalizeReputationScore(score);
 
     if (normalizedScore < 40) return "danger";
     if (normalizedScore < 75) return "warning";
     return "safe";
+  }
+
+  function clearFilters() {
+    setSearchTerm("");
+    setStatusFilter("All");
+    setCurrentPage(1);
+  }
+
+  function clearDashboardData() {
+    onClearDashboard();
+    clearFilters();
+  }
+
+  function escapeCsvValue(value: string | number) {
+    const stringValue = String(value);
+
+    if (
+      stringValue.includes(",") ||
+      stringValue.includes('"') ||
+      stringValue.includes("\n")
+    ) {
+      return `"${stringValue.replace(/"/g, '""')}"`;
     }
 
+    return stringValue;
+  }
+
   function exportCsv() {
+    if (filteredSessions.length === 0) {
+      return;
+    }
+
     const headers = [
       "session_id",
       "login_attempts",
       "failed_logins",
       "ip_reputation_score",
       "result",
+      "risk_level",
+      "probability",
     ];
 
-    const rows = filteredSessions.map((session) => [
+    const csvRows = filteredSessions.map((session) => [
       session.session_id,
       session.login_attempts,
       session.failed_logins,
-      session.ip_reputation_score,
-      getResultLabel(session),
+      normalizeReputationScore(session.ip_reputation_score),
+      session.result,
+      session.risk_level ?? "",
+      session.probability ?? "",
     ]);
 
-    const csvContent = [headers, ...rows]
-      .map((row) => row.join(","))
+    const csvContent = [headers, ...csvRows]
+      .map((row) => row.map(escapeCsvValue).join(","))
       .join("\n");
 
     const blob = new Blob([csvContent], {
@@ -213,22 +175,20 @@ const paginatedSessions = filteredSessions.slice(
           <div className="dashboard-brand-icon">
             <Shield size={24} />
           </div>
+
           <span>
             BruteForce <strong>Sentinel</strong>
-            </span>
+          </span>
         </div>
 
-        <div className="dashboard-nav-links">
-          <button className="active">Dashboard</button>
-          <button>Detection Logs</button>
-          <button>Rules</button>
-          <button>Settings</button>
-        </div>
+        <div className="dashboard-nav-placeholder"></div>
 
         <div className="dashboard-user-area">
-          <Bell size={22} />
-          <div className="dashboard-avatar">
-            <User size={22} />
+          <div className="dashboard-user-area">
+            <button className="navbar-logout-button" onClick={onLogout}>
+              <LogOut size={18} />
+                 Logout
+            </button>
           </div>
         </div>
       </nav>
@@ -238,26 +198,34 @@ const paginatedSessions = filteredSessions.slice(
           <div>
             <h1>Detection Results</h1>
             <p>
-              Real-time analysis of authentication attempts. Monitoring
-              brute-force patterns across all registered endpoints.
+              Dashboard starts empty. Run Detection Test or upload a CSV
+              file to generate detection results.
             </p>
           </div>
 
           <div className="dashboard-actions">
-            <button className="secondary-action" onClick={loadSessions}>
-              <RefreshCw size={18} />
-              {loading ? "Refreshing..." : "Refresh"}
+            <button className="simulation-button" onClick={onOpenSimulation}>
+              Run Detection Test
             </button>
 
-            <button className="primary-action" onClick={exportCsv}>
+            <button
+              className="primary-action"
+              onClick={exportCsv}
+              disabled={filteredSessions.length === 0}
+            >
               <Download size={18} />
               Export CSV
             </button>
 
-            <button className="logout-action" onClick={onLogout}>
-              <LogOut size={18} />
-              Logout
+            <button
+              className="secondary-action"
+              onClick={clearDashboardData}
+              disabled={sessions.length === 0}
+            >
+              <Trash2 size={18} />
+              Clear Dashboard
             </button>
+
           </div>
         </div>
 
@@ -267,9 +235,11 @@ const paginatedSessions = filteredSessions.slice(
               <p>Total Login Attempts</p>
               <h2>{totalLoginAttempts.toLocaleString()}</h2>
               <div className="kpi-meta">
-                <span className="trend trend-green">↗ 12%</span>
-                <small>Increase vs last 24h</small>
-            </div>
+                <span className="trend trend-green">
+                  {sessions.length === 0 ? "No Data" : "Active"}
+                </span>
+                <small>Generated from simulation results</small>
+              </div>
             </div>
 
             <div className="kpi-icon blue-icon">
@@ -282,9 +252,11 @@ const paginatedSessions = filteredSessions.slice(
               <p>Failed Logins</p>
               <h2>{totalFailedLogins.toLocaleString()}</h2>
               <div className="kpi-meta">
-                <span className="trend trend-yellow">High Vol</span>
-                <small>Unusual spike detected</small>
-            </div>
+                <span className="trend trend-yellow">
+                  {sessions.length === 0 ? "No Data" : "Tracked"}
+                </span>
+                <small>Based on simulated login attempts</small>
+              </div>
             </div>
 
             <div className="kpi-icon yellow-icon">
@@ -297,9 +269,11 @@ const paginatedSessions = filteredSessions.slice(
               <p>Brute-Force Incidents</p>
               <h2>{totalIncidents.toLocaleString()}</h2>
               <div className="kpi-meta">
-                <span className="trend trend-red">Critical</span>
-                <small>Requires immediate attention</small>
-            </div>
+                <span className="trend trend-red">
+                  {totalIncidents > 0 ? "Detected" : "None"}
+                </span>
+                <small>Compromised sessions only</small>
+              </div>
             </div>
 
             <div className="kpi-icon red-icon">
@@ -318,8 +292,8 @@ const paginatedSessions = filteredSessions.slice(
               onChange={(event) => {
                 setSearchTerm(event.target.value);
                 setCurrentPage(1);
-                }}
-                            />
+              }}
+            />
           </div>
 
           <div className="filter-label">Filters:</div>
@@ -327,8 +301,8 @@ const paginatedSessions = filteredSessions.slice(
           <select
             value={statusFilter}
             onChange={(event) => {
-            setStatusFilter(event.target.value);
-            setCurrentPage(1);
+              setStatusFilter(event.target.value);
+              setCurrentPage(1);
             }}
           >
             <option value="All">Status: All</option>
@@ -336,148 +310,160 @@ const paginatedSessions = filteredSessions.slice(
             <option value="benign">Benign</option>
           </select>
 
-          <select>
-            <option>Time: Last 24 Hours</option>
-            <option>Time: Last 7 Days</option>
-            <option>Time: Last 30 Days</option>
-          </select>
 
-          <button
-            className="clear-filter"
-            onClick={() => {
-              setSearchTerm("");
-              setStatusFilter("All");
-              setCurrentPage(1);
-            }}
-          >
-            Clear All
+          <button className="clear-filter" onClick={clearFilters}>
+            Clear Filters
           </button>
         </div>
 
-        {error && <div className="dashboard-error">{error}</div>}
-
         <section className="dashboard-table-card">
-          <table>
-            <thead>
-              <tr>
-                <th>Session ID</th>
-                <th>Login Attempts</th>
-                <th>Failed Logins</th>
-                <th>IP Reputation Score</th>
-                <th>Result</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {filteredSessions.map((session) => {
-                const result = getResultLabel(session);
-                const reputationClass = getReputationClass(
-                  session.ip_reputation_score
-                );
-
-                return (
-                  <tr key={session.session_id}>
-                    <td>{session.session_id}</td>
-                    <td>{session.login_attempts}</td>
-                    <td>{session.failed_logins}</td>
-                    <td>
-                      <span className={`reputation ${reputationClass}`}>
-                        {normalizeReputationScore(session.ip_reputation_score)} / 100
-                      </span>
-                    </td>
-                    <td>
-                      <span
-                        className={
-                          result === "Compromised"
-                            ? "status-badge compromised"
-                            : "status-badge benign"
-                        }
-                      >
-                        {result}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-
-          {filteredSessions.length === 0 && !loading && (
+          {sessions.length === 0 ? (
             <div className="empty-state">
-              No sessions found. Make sure your backend is running.
+              <h2>No detection data yet</h2>
+              <p>
+                Run Detection Test or upload a CSV file to generate
+                detection results.
+              </p>
+
+              <button className="simulation-button" onClick={onOpenSimulation}>
+                Run Detection Test
+              </button>
             </div>
+          ) : (
+            <>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Session ID</th>
+                    <th>Login Attempts</th>
+                    <th>Failed Logins</th>
+                    <th>IP Reputation Score</th>
+                    <th>Result</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {paginatedSessions.map((session) => {
+                    const reputationClass = getReputationClass(
+                      session.ip_reputation_score
+                    );
+
+                    return (
+                      <tr key={session.session_id}>
+                        <td>{session.session_id}</td>
+                        <td>{session.login_attempts}</td>
+                        <td>{session.failed_logins}</td>
+                        <td>
+                          <span className={`reputation ${reputationClass}`}>
+                            {normalizeReputationScore(
+                              session.ip_reputation_score
+                            )}{" "}
+                            / 100
+                          </span>
+                        </td>
+                        <td>
+                          <span
+                            className={
+                              session.result === "Compromised"
+                                ? "status-badge compromised"
+                                : "status-badge benign"
+                            }
+                          >
+                            {session.result}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+
+              {filteredSessions.length === 0 && (
+                <div className="empty-state">
+                  No matching results found. Try changing your search or filter.
+                </div>
+              )}
+
+              <div className="table-footer">
+                <p>
+                  Showing{" "}
+                  <strong>
+                    {filteredSessions.length === 0
+                      ? "0"
+                      : `${(currentPage - 1) * rowsPerPage + 1}-${Math.min(
+                          currentPage * rowsPerPage,
+                          filteredSessions.length
+                        )}`}
+                  </strong>{" "}
+                  of{" "}
+                  <strong>{filteredSessions.length.toLocaleString()}</strong>{" "}
+                  results
+                </p>
+
+                <div className="pagination">
+                  <button
+                    disabled={currentPage === 1}
+                    onClick={() =>
+                      setCurrentPage((page) => Math.max(1, page - 1))
+                    }
+                  >
+                    ‹
+                  </button>
+
+                  <button
+                    className={currentPage === 1 ? "active-page" : ""}
+                    onClick={() => setCurrentPage(1)}
+                  >
+                    1
+                  </button>
+
+                  {totalPages >= 2 && (
+                    <button
+                      className={currentPage === 2 ? "active-page" : ""}
+                      onClick={() => setCurrentPage(2)}
+                    >
+                      2
+                    </button>
+                  )}
+
+                  {totalPages >= 3 && (
+                    <button
+                      className={currentPage === 3 ? "active-page" : ""}
+                      onClick={() => setCurrentPage(3)}
+                    >
+                      3
+                    </button>
+                  )}
+
+                  {totalPages > 4 && <span>...</span>}
+
+                  {totalPages > 3 && (
+                    <button
+                      className={
+                        currentPage === totalPages ? "active-page" : ""
+                      }
+                      onClick={() => setCurrentPage(totalPages)}
+                    >
+                      {totalPages}
+                    </button>
+                  )}
+
+                  <button
+                    disabled={currentPage === totalPages}
+                    onClick={() =>
+                      setCurrentPage((page) => Math.min(totalPages, page + 1))
+                    }
+                  >
+                    ›
+                  </button>
+                </div>
+              </div>
+            </>
           )}
-
-          <div className="table-footer">
-  <p>
-    Showing{" "}
-    <strong>
-      {filteredSessions.length === 0
-        ? "0"
-        : `${(currentPage - 1) * rowsPerPage + 1}-${Math.min(
-            currentPage * rowsPerPage,
-            filteredSessions.length
-          )}`}
-    </strong>{" "}
-    of <strong>{filteredSessions.length.toLocaleString()}</strong> results
-  </p>
-
-  <div className="pagination">
-    <button
-      disabled={currentPage === 1}
-      onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
-    >
-      ‹
-    </button>
-
-    <button
-      className={currentPage === 1 ? "active-page" : ""}
-      onClick={() => setCurrentPage(1)}
-    >
-      1
-    </button>
-
-    {totalPages >= 2 && (
-      <button
-        className={currentPage === 2 ? "active-page" : ""}
-        onClick={() => setCurrentPage(2)}
-      >
-        2
-      </button>
-    )}
-
-    {totalPages >= 3 && (
-      <button
-        className={currentPage === 3 ? "active-page" : ""}
-        onClick={() => setCurrentPage(3)}
-      >
-        3
-      </button>
-    )}
-
-    {totalPages > 4 && <span>...</span>}
-
-    {totalPages > 3 && (
-      <button
-        className={currentPage === totalPages ? "active-page" : ""}
-        onClick={() => setCurrentPage(totalPages)}
-      >
-        {totalPages}
-      </button>
-    )}
-
-    <button
-      disabled={currentPage === totalPages}
-      onClick={() =>
-        setCurrentPage((page) => Math.min(totalPages, page + 1))
-      }
-    >
-      ›
-    </button>
-  </div>
-</div>
         </section>
       </section>
     </main>
   );
 }
+
+export default DashboardPage;

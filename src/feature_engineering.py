@@ -26,6 +26,10 @@ class FeatureEngineer:
     ) -> pd.DataFrame:
         """
         Select features based on predefined feature sets.
+
+        Engineered features (e.g. failed_login_ratio, risk_score) are added
+        in train.py AFTER the train/test split, so they will not exist in X
+        at this stage. They are silently skipped here and kept post-split.
         
         Args:
             X: Input features dataframe
@@ -41,15 +45,17 @@ class FeatureEngineer:
         else:  # 'all'
             features = X.columns.tolist()
         
-        # Filter to only available features
+        # Only select features that exist at this stage.
+        # Engineered features are not yet present — they are added post-split
+        # in train.py and do not need to be selected here.
         available_features = [f for f in features if f in X.columns]
-        missing_features = [f for f in features if f not in X.columns]
-        
-        if missing_features:
-            print(f"Warning: Features not found in data: {missing_features}")
+        engineered_pending = [f for f in features if f not in X.columns]
+
+        if engineered_pending:
+            print(f"Note: Engineered features will be added post-split: {engineered_pending}")
         
         X_selected = X[available_features].copy()
-        print(f"Selected {len(available_features)} features ({feature_set} set)")
+        print(f"Selected {len(available_features)} base features ({feature_set} set)")
         
         return X_selected
     
@@ -108,11 +114,9 @@ class FeatureEngineer:
         Returns:
             Series of correlations with target
         """
-        # Combine X and y for correlation calculation
         combined = pd.concat([X, y], axis=1)
         target_name = y.name or "target"
         
-        # Calculate correlation with target
         correlations = combined.corr()[target_name].drop(target_name)
         correlations = correlations.abs().sort_values(ascending=False)
         

@@ -5,6 +5,8 @@ import axios from "axios";
 import * as fs from "fs";
 import * as path from "path";
 import csvParser = require("csv-parser");
+import Database = require("better-sqlite3");
+import bcrypt = require("bcryptjs");
 
 const app = express();
 const PORT = 5000;
@@ -12,9 +14,66 @@ const PORT = 5000;
 app.use(cors());
 app.use(express.json());
 
+/* =========================
+   SQLite Database Setup
+========================= */
+
+const databasePath = path.resolve(process.cwd(), "database.db");
+const db = new Database(databasePath);
+
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'admin',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`).run();
+
+type UserRow = {
+  id: number;
+  username: string;
+  password_hash: string;
+  role: string;
+  created_at: string;
+};
+
+function createDefaultAdminUser() {
+  const defaultUsername = "admin";
+  const defaultPassword = "Admin@123";
+
+  const existingUser = db
+    .prepare("SELECT * FROM users WHERE username = ?")
+    .get(defaultUsername) as UserRow | undefined;
+
+  if (!existingUser) {
+    const passwordHash = bcrypt.hashSync(defaultPassword, 10);
+
+    db.prepare(`
+      INSERT INTO users (username, password_hash, role)
+      VALUES (?, ?, ?)
+    `).run(defaultUsername, passwordHash, "admin");
+
+    console.log("Default admin user created");
+    console.log("Username: admin");
+    console.log("Password: Admin@123");
+  }
+}
+
+createDefaultAdminUser();
+
+/* =========================
+   Basic Route
+========================= */
+
 app.get("/", (req: Request, res: Response) => {
   res.send("Backend is running");
 });
+
+/* =========================
+   Sessions Route
+========================= */
 
 app.get("/api/sessions", (req: Request, res: Response) => {
   const sessions: Array<{
@@ -27,10 +86,12 @@ app.get("/api/sessions", (req: Request, res: Response) => {
   }> = [];
 
   const limit =
-    typeof req.query.limit === "string" ? Number(req.query.limit) : 20;
-  const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(limit, 500)) : 20;
+    typeof req.query.limit === "string" ? Number(req.query.limit) : 500;
 
-  // When running `npm run dev` from `server/`, cwd is `.../brute-force-detection/server`.
+  const safeLimit = Number.isFinite(limit)
+    ? Math.max(1, Math.min(limit, 500))
+    : 500;
+
   const csvPath = path.resolve(
     process.cwd(),
     "../data/cybersecurity_intrusion_data.csv"
@@ -66,29 +127,133 @@ app.get("/api/sessions", (req: Request, res: Response) => {
     });
 });
 
-app.post("/api/login", (req: Request, res: Response) => {
-  const { username, password } = req.body ?? {};
+/* =========================
+   Database Login Route
+========================= */
 
-  if (!username || !password) {
-    return res.status(400).json({
-      error: "Username and password are required",
+app.post("/api/login", (req: Request, res: Response) => {
+  try {
+    const { username, password } = req.body ?? {};
+
+    if (!username || !password) {
+      return res.status(400).json({
+        success: false,
+        error: "Username and password are required",
+      });
+    }
+
+    const user = db
+      .prepare("SELECT * FROM users WHERE username = ?")
+      .get(username) as UserRow | undefined;
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: "Invalid username or password",
+      });
+    }
+
+    const passwordMatches = bcrypt.compareSync(password, user.password_hash);
+
+    if (!passwordMatches) {
+      return res.status(401).json({
+        success: false,
+        error: "Invalid username or password",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Login successful",
+      user: {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    console.error("Login error:", error);
+
+    return res.status(500).json({
+      success: false,
+      error: "Login failed due to server error",
     });
   }
-
-  // Demo credentials (override via env vars if desired)
-  const expectedUsername = process.env.LOGIN_USERNAME ?? "admin";
-  const expectedPassword = process.env.LOGIN_PASSWORD ?? "admin123";
-
-  if (username === expectedUsername && password === expectedPassword) {
-    return res.status(200).json({ message: "Login successful" });
-  }
-
-  return res.status(401).json({ error: "Invalid username or password" });
 });
+
+/* =========================
+   Prediction Route
+========================= */
+
+type PredictRequestBody = {
+  session_id?: string;
+  login_attempts?: number | string;
+  failed_logins?: number | string;
+  ip_reputation_score?: number | string;
+};
 
 app.post("/api/predict", async (req: Request, res: Response) => {
   try {
-    const inputData = req.body;
+    const {
+      session_id,
+      login_attempts,
+      failed_logins,
+      ip_reputation_score,
+    } = req.body as PredictRequestBody;
+
+    if (!session_id) {
+      return res.status(400).json({
+        error: "session_id is required",
+      });
+    }
+
+    const loginAttemptsNumber = Number(login_attempts);
+    const failedLoginsNumber = Number(failed_logins);
+    let ipReputationScoreNumber = Number(ip_reputation_score);
+
+    if (
+      Number.isNaN(loginAttemptsNumber) ||
+      Number.isNaN(failedLoginsNumber) ||
+      Number.isNaN(ipReputationScoreNumber)
+    ) {
+      return res.status(400).json({
+        error:
+          "login_attempts, failed_logins, and ip_reputation_score must be valid numbers",
+      });
+    }
+
+    if (
+      loginAttemptsNumber < 0 ||
+      failedLoginsNumber < 0 ||
+      ipReputationScoreNumber < 0
+    ) {
+      return res.status(400).json({
+        error: "Input values cannot be negative",
+      });
+    }
+
+    if (failedLoginsNumber > loginAttemptsNumber) {
+      return res.status(400).json({
+        error: "failed_logins cannot be greater than login_attempts",
+      });
+    }
+
+    if (ipReputationScoreNumber > 1) {
+      ipReputationScoreNumber = ipReputationScoreNumber / 100;
+    }
+
+    if (ipReputationScoreNumber > 1) {
+      return res.status(400).json({
+        error: "ip_reputation_score must be between 0 and 100, or 0 and 1",
+      });
+    }
+
+    const inputData = {
+      session_id,
+      login_attempts: loginAttemptsNumber,
+      failed_logins: failedLoginsNumber,
+      ip_reputation_score: ipReputationScoreNumber,
+    };
 
     console.log("Sending to ML API:", inputData);
 
@@ -99,7 +264,7 @@ app.post("/api/predict", async (req: Request, res: Response) => {
 
     console.log("ML API returned:", response.data);
 
-    res.json(response.data);
+    return res.status(200).json(response.data);
   } catch (error: any) {
     console.error("Error calling ML API:", error.message);
 
@@ -107,24 +272,28 @@ app.post("/api/predict", async (req: Request, res: Response) => {
       console.error("ML API error response:", error.response.data);
     }
 
-    const status = typeof error?.response?.status === "number" ? error.response.status : 500;
-    const details =
-      typeof error?.code === "string"
-        ? `${error.code}`
-        : typeof error?.message === "string"
-          ? error.message
-          : "Unknown error";
+    const status =
+      typeof error?.response?.status === "number" ? error.response.status : 500;
 
-    res.status(500).json({
+    const details =
+      error?.response?.data ??
+      (typeof error?.message === "string" ? error.message : "Unknown error");
+
+    return res.status(status).json({
       error: "Failed to get prediction from ML API",
       hint:
-        "Make sure the ML API is running on http://127.0.0.1:8000 (uvicorn src.api:app --reload --port 8000).",
+        "Make sure the ML API is running on http://127.0.0.1:8000",
       upstream_status: status,
       details,
     });
   }
 });
 
+/* =========================
+   Start Server
+========================= */
+
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
+  console.log(`SQLite database: ${databasePath}`);
 });

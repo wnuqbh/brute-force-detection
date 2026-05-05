@@ -13,36 +13,57 @@ data:
 preprocessing:
   handle_missing:
     encryption_used: "Unknown"
-  categorical_encoding: "onehot"  # onehot or label
+  categorical_encoding: "onehot"
+
+  # SMOTE applied on training set only to reduce false negatives
+  resampling:
+    method: "smote"
+    sampling_strategy: "minority"   # FIXED: was 0.5, which caused the ValueError
+    random_state: 42
 
 # Feature Engineering Configuration
 features:
+  # Base features selected from data before split
   core_features:
+    - "login_attempts"
     - "failed_logins"
     - "ip_reputation_score"
-    - "login_attempts"
-    - "session_duration"
-    - "network_packet_size"
-  
+    # Engineered features added in train.py after split — listed here
+    # so FeatureEngineer knows to keep them once created
+    - "failed_login_ratio"
+    - "risk_score"
+
   extended_features:
+    - "login_attempts"
     - "failed_logins"
     - "ip_reputation_score"
-    - "login_attempts"
     - "session_duration"
     - "network_packet_size"
     - "unusual_time_access"
+    - "failed_login_ratio"
+    - "risk_score"
 
 # Model Configuration
 model:
   type: "RandomForest"
   params:
-    n_estimators: 100
-    max_depth: 15
-    min_samples_split: 5
-    min_samples_leaf: 2
+    n_estimators: 500             # More trees = more stable probability estimates
+    max_depth: 8                  # Shallow enough to avoid overfitting on 5 features
+    min_samples_split: 2          # Loose — lets RF learn rare attack patterns
+    min_samples_leaf: 1           # Loose — same reason
+    max_features: 1.0             # Use ALL features per split (only 5, no need to subsample)
     random_state: 42
     n_jobs: -1
-    class_weight: "balanced"
+    class_weight: "balanced_subsample"  # Per-tree rebalancing, stronger than "balanced"
+
+  # Lower threshold = fewer false negatives (missed attacks)
+  # 0.25 is the recommended sweet spot based on your threshold analysis
+  decision_threshold: 0.25
+
+  cross_validation:
+    folds: 5
+    scoring: "recall"             # Optimize directly for catching attacks
+    secondary_scoring: "f2"
 
 # Evaluation Configuration
 evaluation:
@@ -51,11 +72,15 @@ evaluation:
     - "precision"
     - "recall"
     - "f1"
+    - "f2"                        # Weights recall 2x over precision
   confusion_matrix: true
   roc_auc: true
+  pr_auc: true                    # Better than ROC-AUC for imbalanced data
+  threshold_analysis: true        # Print full threshold table after evaluation
 
 # Output Configuration
 output:
   models_dir: "models"
   reports_dir: "reports"
   model_name: "brute_force_detector.pkl"
+  save_threshold: true            # Persist threshold + feature list for inference

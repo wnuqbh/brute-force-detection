@@ -1,0 +1,14 @@
+{
+  "name": "brute-force-detection",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n ML,SERVER,DASHBOARD -c cyan,green,magenta \"python -m uvicorn src.api:app --reload --host 127.0.0.1 --port 8000\" \"npm run dev --prefix server\" \"npm run dev --prefix dashboard\"",
+    "dev:ml": "python -m uvicorn src.api:app --reload --host 127.0.0.1 --port 8000",
+    "dev:server": "npm run dev --prefix server",
+    "dev:dashboard": "npm run dev --prefix dashboard"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
