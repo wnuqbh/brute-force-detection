@@ -19,6 +19,7 @@ function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [page, setPage] = useState<Page>("dashboard");
   const [dashboardRows, setDashboardRows] = useState<DetectionRow[]>([]);
+  const [dashboardMessage, setDashboardMessage] = useState("");
 
   const handleLogin = () => {
     setIsLoggedIn(true);
@@ -36,9 +37,22 @@ function App() {
   };
 
   const handleCsvUploadResult = (rows: DetectionRow[]) => {
-    setDashboardRows((prev) => [...rows, ...prev]);
-    setPage("dashboard");
-  };
+  setDashboardRows((prev) => [...rows, ...prev]);
+
+  const compromisedCount = rows.filter(
+    (row) => row.result === "Compromised"
+  ).length;
+
+  const benignCount = rows.filter(
+    (row) => row.result === "Benign"
+  ).length;
+
+  setDashboardMessage(
+    `CSV uploaded successfully. ${rows.length} sessions analyzed, ${compromisedCount} compromised and ${benignCount} benign.`
+  );
+
+  setPage("dashboard");
+};
 
   const handleClearDashboard = () => {
     setDashboardRows([]);
@@ -58,13 +72,47 @@ function App() {
     );
   }
 
+  const handleLoadHistory = async () => {
+  try {
+    const response = await fetch("http://localhost:5000/api/detection-logs");
+
+    if (!response.ok) {
+      throw new Error("Failed to load detection history.");
+    }
+
+    const data = await response.json();
+
+    const historyRows: DetectionRow[] = data.map((item: any) => ({
+      session_id: item.session_id,
+      login_attempts: Number(item.login_attempts),
+      failed_logins: Number(item.failed_logins),
+      ip_reputation_score: Number(item.ip_reputation_score),
+      result: item.result === "Compromised" ? "Compromised" : "Benign",
+      risk_level: item.risk_level || "Low",
+      probability:
+        typeof item.probability === "number" ? item.probability : undefined,
+    }));
+
+    setDashboardRows(historyRows);
+    setDashboardMessage(
+      `History loaded successfully. ${historyRows.length} saved detection records found.`
+    );
+  } catch (error) {
+    console.error("Failed to load history:", error);
+    setDashboardMessage("Failed to load detection history.");
+  }
+};
+
   return (
     <DashboardPage
-      rows={dashboardRows}
-      onClearDashboard={handleClearDashboard}
-      onLogout={handleLogout}
-      onOpenSimulation={() => setPage("simulation")}
-    />
+  rows={dashboardRows}
+  dashboardMessage={dashboardMessage}
+  onDismissMessage={() => setDashboardMessage("")}
+  onClearDashboard={handleClearDashboard}
+  onLogout={handleLogout}
+  onOpenSimulation={() => setPage("simulation")}
+  onViewHistory={handleLoadHistory}
+/>
   );
 }
 

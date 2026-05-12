@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Brute Force Detection Report</title>
+    <style>
+        body       { font-family: Arial, sans-serif; margin: 40px;
+                      background: #f4f6f8; color: #2c3e50; }
+        h1         { color: #2c3e50; border-bottom: 2px solid #4CAF50;
+                      padding-bottom: 10px; }
+        h3         { color: #34495e; margin-top: 0; }
+        table      { border-collapse: collapse; width: 100%;
+                      margin-bottom: 10px; background: white; }
+        th, td     { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        th         { background-color: #4CAF50; color: white; }
+        tr:hover   { background-color: #f9f9f9; }
+        .attack    { color: #e74c3c; font-weight: bold; }
+        .normal    { color: #27ae60; font-weight: bold; }
+        .badge     { display: inline-block; padding: 5px 14px; border-radius: 4px;
+                      font-weight: bold; color: white; margin-right: 6px;
+                      font-size: 13px; }
+        .red       { background: #e74c3c; }
+        .green     { background: #27ae60; }
+        .section   { background: white; padding: 24px; border-radius: 8px;
+                      margin-bottom: 20px;
+                      box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+        .grid      { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .meta      { font-size: 14px; color: #7f8c8d; margin-bottom: 24px; }
+    </style>
+</head>
+<body>
+
+<h1>&#128737; Brute Force Detection &mdash; Evaluation Report</h1>
+<p class="meta">
+    <strong>Model:</strong> Random Forest &nbsp;|&nbsp;
+    <strong>Decision Threshold:</strong> 0.5 &nbsp;|&nbsp;
+    <strong>Features:</strong> login_attempts, failed_logins,
+    ip_reputation_score, failed_login_ratio, risk_score
+</p>
+
+<div class="grid">
+
+    <div class="section">
+        <h3>Performance Summary</h3>
+        <table>
+            <tr><th>Metric</th><th>Value</th></tr>
+            <tr><td>Accuracy</td>            <td>0.8632</td></tr>
+            <tr><td>Recall (Sensitivity)</td><td>0.6975</td></tr>
+            <tr><td>Precision</td>           <td>0.9950</td></tr>
+            <tr><td>F1 Score</td>            <td>0.8201</td></tr>
+            <tr><td>F2 Score</td>            <td>0.7419</td></tr>
+            <tr><td>ROC-AUC</td>             <td>0.8559</td></tr>
+            <tr><td>PR-AUC</td>              <td>0.8890</td></tr>
+        </table>
+    </div>
+
+    <div class="section">
+        <h3>Confusion Matrix</h3>
+        <table>
+            <tr>
+                <th></th>
+                <th>Predicted Normal</th>
+                <th>Predicted Attack</th>
+            </tr>
+            <tr>
+                <td><strong>Actual Normal</strong></td>
+                <td class="normal">1052 (TN)</td>
+                <td class="attack">3 (FP)</td>
+            </tr>
+            <tr>
+                <td><strong>Actual Attack</strong></td>
+                <td class="attack">258 (FN)</td>
+                <td class="normal">595 (TP)</td>
+            </tr>
+        </table>
+        <p style="margin-top:14px;">
+            <span class="badge green">TN: 1052</span>
+            <span class="badge red">FP: 3</span>
+            <span class="badge red">FN: 258</span>
+            <span class="badge green">TP: 595</span>
+        </p>
+    </div>
+
+</div>
+
+
+        <div class="section">
+            <h3>Feature Importance</h3>
+            <table>
+                <tr><th>Feature</th><th>Importance</th><th>Bar</th></tr>
+                
+                <tr>
+                    <td>failed_logins</td>
+                    <td>39.48%</td>
+                    <td>
+                        <div style="background:#4CAF50;height:16px;width:78px;
+                             border-radius:3px;"></div>
+                    </td>
+                </tr>
+                <tr>
+                    <td>login_attempts</td>
+                    <td>30.21%</td>
+                    <td>
+                        <div style="background:#4CAF50;height:16px;width:60px;
+                             border-radius:3px;"></div>
+                    </td>
+                </tr>
+                <tr>
+                    <td>ip_reputation_score</td>
+                    <td>28.83%</td>
+                    <td>
+                        <div style="background:#4CAF50;height:16px;width:57px;
+                             border-radius:3px;"></div>
+                    </td>
+                </tr>
+                <tr>
+                    <td>risk_score</td>
+                    <td>1.42%</td>
+                    <td>
+                        <div style="background:#4CAF50;height:16px;width:2px;
+                             border-radius:3px;"></div>
+                    </td>
+                </tr>
+                <tr>
+                    <td>failed_login_ratio</td>
+                    <td>0.06%</td>
+                    <td>
+                        <div style="background:#4CAF50;height:16px;width:0px;
+                             border-radius:3px;"></div>
+                    </td>
+                </tr>
+            </table>
+        </div>
+
+
+        <div class="section">
+            <h3>Threshold Analysis</h3>
+            <table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th>threshold</th>
+      <th>accuracy</th>
+      <th>precision</th>
+      <th>recall</th>
+      <th>f1</th>
+      <th>f2</th>
+      <th>false_negatives</th>
+      <th>false_positives</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>0.2000</td>
+      <td>0.6111</td>
+      <td>0.5393</td>
+      <td>0.8933</td>
+      <td>0.6726</td>
+      <td>0.7896</td>
+      <td>91</td>
+      <td>651</td>
+    </tr>
+    <tr>
+      <td>0.2500</td>
+      <td>0.7411</td>
+      <td>0.6790</td>
+      <td>0.7984</td>
+      <td>0.7338</td>
+      <td>0.7712</td>
+      <td>172</td>
+      <td>322</td>
+    </tr>
+    <tr>
+      <td>0.3000</td>
+      <td>0.8574</td>
+      <td>0.9693</td>
+      <td>0.7034</td>
+      <td>0.8152</td>
+      <td>0.7442</td>
+      <td>253</td>
+      <td>19</td>
+    </tr>
+    <tr>
+      <td>0.3500</td>
+      <td>0.8611</td>
+      <td>0.9820</td>
+      <td>0.7022</td>
+      <td>0.8189</td>
+      <td>0.7447</td>
+      <td>254</td>
+      <td>11</td>
+    </tr>
+    <tr>
+      <td>0.4000</td>
+      <td>0.8622</td>
+      <td>0.9868</td>
+      <td>0.7011</td>
+      <td>0.8197</td>
+      <td>0.7442</td>
+      <td>255</td>
+      <td>8</td>
+    </tr>
+    <tr>
+      <td>0.4500</td>
+      <td>0.8611</td>
+      <td>0.9868</td>
+      <td>0.6987</td>
+      <td>0.8181</td>
+      <td>0.7420</td>
+      <td>257</td>
+      <td>8</td>
+    </tr>
+    <tr>
+      <td>0.5000</td>
+      <td>0.8632</td>
+      <td>0.9950</td>
+      <td>0.6975</td>
+      <td>0.8201</td>
+      <td>0.7419</td>
+      <td>258</td>
+      <td>3</td>
+    </tr>
+  </tbody>
+</table>
+        </div>
+
+</body>
+</html>

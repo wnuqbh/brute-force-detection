@@ -31,12 +31,42 @@ db.prepare(`
   )
 `).run();
 
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS detection_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    login_attempts INTEGER NOT NULL,
+    failed_logins INTEGER NOT NULL,
+    ip_reputation_score REAL NOT NULL,
+    result TEXT NOT NULL,
+    risk_level TEXT,
+    probability REAL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`).run();
+
 type UserRow = {
   id: number;
   username: string;
   password_hash: string;
   role: string;
   created_at: string;
+};
+
+type PredictRequestBody = {
+  session_id?: string;
+  login_attempts?: number | string;
+  failed_logins?: number | string;
+  ip_reputation_score?: number | string;
+};
+
+type MlApiResponse = {
+  session_id?: string;
+  prediction: number;
+  probability?: number | null;
+  risk_level?: string | null;
+  threshold?: number;
+  features_used?: Record<string, number>;
 };
 
 function createDefaultAdminUser() {
@@ -67,15 +97,17 @@ createDefaultAdminUser();
    Basic Route
 ========================= */
 
-app.get("/", (req: Request, res: Response) => {
+app.get("/", (_req: Request, res: Response) => {
   res.send("Backend is running");
 });
 
 /* =========================
    Sessions Route
+   Kept for testing or dataset preview.
+   Dashboard no longer needs to auto-load this.
 ========================= */
 
-app.get("/api/sessions", (req: Request, res: Response) => {
+app.get("/api/sessions", (_req: Request, res: Response) => {
   const sessions: Array<{
     session_id: string;
     failed_logins: number;
@@ -86,7 +118,7 @@ app.get("/api/sessions", (req: Request, res: Response) => {
   }> = [];
 
   const limit =
-    typeof req.query.limit === "string" ? Number(req.query.limit) : 500;
+    typeof _req.query.limit === "string" ? Number(_req.query.limit) : 500;
 
   const safeLimit = Number.isFinite(limit)
     ? Math.max(1, Math.min(limit, 500))
@@ -119,11 +151,14 @@ app.get("/api/sessions", (req: Request, res: Response) => {
       });
     })
     .on("end", () => {
-      res.json(sessions);
+      return res.json(sessions);
     })
     .on("error", (error: unknown) => {
       console.error("Error reading CSV:", error);
-      res.status(500).json({ error: "Failed to read CSV data" });
+
+      return res.status(500).json({
+        error: "Failed to read CSV data",
+      });
     });
 });
 
@@ -184,13 +219,6 @@ app.post("/api/login", (req: Request, res: Response) => {
 /* =========================
    Prediction Route
 ========================= */
-
-type PredictRequestBody = {
-  session_id?: string;
-  login_attempts?: number | string;
-  failed_logins?: number | string;
-  ip_reputation_score?: number | string;
-};
 
 app.post("/api/predict", async (req: Request, res: Response) => {
   try {
@@ -257,12 +285,36 @@ app.post("/api/predict", async (req: Request, res: Response) => {
 
     console.log("Sending to ML API:", inputData);
 
-    const response = await axios.post(
+    const response = await axios.post<MlApiResponse>(
       "http://127.0.0.1:8000/predict",
       inputData
     );
 
     console.log("ML API returned:", response.data);
+
+    const predictionResult =
+      response.data.prediction === 1 ? "Compromised" : "Benign";
+
+    db.prepare(`
+      INSERT INTO detection_logs (
+        session_id,
+        login_attempts,
+        failed_logins,
+        ip_reputation_score,
+        result,
+        risk_level,
+        probability
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      inputData.session_id,
+      inputData.login_attempts,
+      inputData.failed_logins,
+      inputData.ip_reputation_score,
+      predictionResult,
+      response.data.risk_level ?? null,
+      response.data.probability ?? null
+    );
 
     return res.status(200).json(response.data);
   } catch (error: any) {
@@ -281,10 +333,64 @@ app.post("/api/predict", async (req: Request, res: Response) => {
 
     return res.status(status).json({
       error: "Failed to get prediction from ML API",
-      hint:
-        "Make sure the ML API is running on http://127.0.0.1:8000",
+      hint: "Make sure the ML API is running on http://127.0.0.1:8000",
       upstream_status: status,
       details,
+    });
+  }
+});
+
+/* =========================
+   Detection Logs Route
+========================= */
+
+app.get("/api/detection-logs", (_req: Request, res: Response) => {
+  try {
+    const rows = db
+      .prepare(`
+        SELECT
+          id,
+          session_id,
+          login_attempts,
+          failed_logins,
+          ip_reputation_score,
+          result,
+          risk_level,
+          probability,
+          created_at
+        FROM detection_logs
+        ORDER BY id DESC
+      `)
+      .all();
+
+    return res.status(200).json(rows);
+  } catch (error) {
+    console.error("Failed to fetch detection logs:", error);
+
+    return res.status(500).json({
+      error: "Failed to fetch detection logs",
+    });
+  }
+});
+
+/* =========================
+   Optional Clear Detection Logs Route
+========================= */
+
+app.delete("/api/detection-logs", (_req: Request, res: Response) => {
+  try {
+    db.prepare("DELETE FROM detection_logs").run();
+
+    return res.status(200).json({
+      success: true,
+      message: "Detection logs cleared",
+    });
+  } catch (error) {
+    console.error("Failed to clear detection logs:", error);
+
+    return res.status(500).json({
+      success: false,
+      error: "Failed to clear detection logs",
     });
   }
 });

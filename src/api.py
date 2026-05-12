@@ -24,12 +24,12 @@ except FileNotFoundError:
 
 try:
     metadata = joblib.load(META_PATH)
-    THRESHOLD = metadata.get("decision_threshold", 0.25)
+    THRESHOLD = metadata.get("decision_threshold", 0.35)
     EXPECTED_FEATURES = metadata.get("features", [])
     print(f"[+] Metadata loaded. Threshold={THRESHOLD}")
     print(f"[+] Expected features: {EXPECTED_FEATURES}")
 except FileNotFoundError:
-    THRESHOLD = 0.25
+    THRESHOLD = 0.35
     EXPECTED_FEATURES = [
         "login_attempts",
         "failed_logins",
@@ -55,14 +55,21 @@ class PredictRequest(BaseModel):
     ip_reputation_score: float = Field(
         ...,
         ge=0,
-        description="IP reputation score, accepts 0-1 or 0-100",
+        description="IP reputation score. Frontend can send 0-100 or 0-1.",
     )
 
 
 def normalize_ip_score(ip_reputation_score: float) -> float:
     """
-    Accept both 75 and 0.75 format.
-    Model uses 0-1 format.
+    Accept both 0-100 and 0-1 IP reputation score.
+
+    Frontend example:
+        95 means 95%
+
+    Model expected format:
+        0.95
+
+    Higher score means safer IP.
     """
     if ip_reputation_score > 1:
         ip_reputation_score = ip_reputation_score / 100
@@ -82,9 +89,13 @@ def compute_engineered_features(
     ip_reputation_score: float,
 ) -> dict:
     """
-    Compute derived features using the same formulas as train.py.
+    Compute derived features using the same scale as training.
+
+    The dataset uses ip_reputation_score from 0 to 1.
+    Higher ip_reputation_score means safer IP.
     """
     failed_login_ratio = failed_logins / (login_attempts + 1e-6)
+
     risk_score = failed_login_ratio * (1 - ip_reputation_score)
 
     return {

@@ -42,9 +42,26 @@ function SimulationPage({
     return score > 1 ? score / 100 : score;
   };
 
+  const resetInvalidInput = () => {
+    setSessionId("");
+    setLoginAttempts("");
+    setFailedLogins("");
+    setIpReputationScore("");
+    setResult(null);
+  };
+
+  const clearForm = () => {
+    setSessionId("");
+    setLoginAttempts("");
+    setFailedLogins("");
+    setIpReputationScore("");
+    setResult(null);
+    setError("");
+  };
+
   const validateSimulationInput = () => {
     if (!sessionId || !loginAttempts || !failedLogins || !ipReputationScore) {
-      throw new Error("Please fill in all fields before running the simulation.");
+      throw new Error("Please fill in all fields before analyzing the session.");
     }
 
     const loginAttemptsNumber = Number(loginAttempts);
@@ -92,11 +109,8 @@ function SimulationPage({
     setResult(null);
 
     try {
-      const {
-        loginAttemptsNumber,
-        failedLoginsNumber,
-        ipScoreNumber,
-      } = validateSimulationInput();
+      const { loginAttemptsNumber, failedLoginsNumber, ipScoreNumber } =
+        validateSimulationInput();
 
       setLoading(true);
 
@@ -114,7 +128,14 @@ function SimulationPage({
       });
 
       if (!response.ok) {
-        throw new Error("Prediction request failed.");
+        const errorData = await response.json().catch(() => null);
+
+        throw new Error(
+          errorData?.details?.detail ||
+            errorData?.details ||
+            errorData?.error ||
+            "Prediction request failed."
+        );
       }
 
       const data: SimulationResult = await response.json();
@@ -133,23 +154,35 @@ function SimulationPage({
 
       onSimulationResult(resultRow);
     } catch (err) {
-      setError(
+      const errorMessage =
         err instanceof Error
           ? err.message
-          : "Unable to run simulation. Make sure the backend and ML API are running."
-      );
+          : "Unable to run detection test. Make sure the backend and ML API are running.";
+
+      const isValidationError =
+        errorMessage.includes("fill in all fields") ||
+        errorMessage.includes("must be numbers") ||
+        errorMessage.includes("cannot be negative") ||
+        errorMessage.includes("greater than login attempts") ||
+        errorMessage.includes("IP reputation score");
+
+      if (isValidationError) {
+  resetInvalidInput();
+  setError(errorMessage);
+
+  setTimeout(() => {
+    setError("");
+  }, 2000);
+
+  return;
+}
+
+setError(errorMessage);
+
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
-  };
-
-  const clearForm = () => {
-    setSessionId("");
-    setLoginAttempts("");
-    setFailedLogins("");
-    setIpReputationScore("");
-    setResult(null);
-    setError("");
   };
 
   const parseCsvRows = (text: string): CsvInputRow[] => {
@@ -246,7 +279,14 @@ function SimulationPage({
     });
 
     if (!response.ok) {
-      throw new Error(`Prediction failed for ${row.session_id}`);
+      const errorData = await response.json().catch(() => null);
+
+      throw new Error(
+        errorData?.details?.detail ||
+          errorData?.details ||
+          errorData?.error ||
+          `Prediction failed for ${row.session_id}`
+      );
     }
 
     const data: SimulationResult = await response.json();
@@ -322,8 +362,8 @@ function SimulationPage({
           <p className="simulation-eyebrow">BruteForce Sentinel</p>
           <h1>Detection Test</h1>
           <p className="simulation-subtitle">
-            Enter login activity details and let the machine learning model classify
-            the session.
+            Enter login activity details and let the machine learning model
+            classify the session.
           </p>
         </div>
 
